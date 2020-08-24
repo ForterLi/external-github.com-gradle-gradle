@@ -25,6 +25,7 @@ import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.gradle.api.JavaVersion;
 import org.gradle.api.artifacts.ModuleIdentifier;
+import org.gradle.api.file.Directory;
 import org.gradle.api.internal.artifacts.DefaultModuleIdentifier;
 import org.gradle.buildinit.plugins.internal.BuildScriptBuilder;
 import org.gradle.buildinit.plugins.internal.BuildScriptBuilderFactory;
@@ -58,14 +59,14 @@ public class Maven2Gradle {
     private final MavenProject rootProject;
 
     private final List<MavenProject> dependentWars = new ArrayList<>();
-    private final File workingDir;
+    private final Directory workingDir;
     private final BuildInitDsl dsl;
 
-    public Maven2Gradle(Set<MavenProject> mavenProjects, File workingDir, BuildInitDsl dsl, BuildScriptBuilderFactory scriptBuilderFactory) throws IOException {
+    public Maven2Gradle(Set<MavenProject> mavenProjects, Directory workingDir, BuildInitDsl dsl, BuildScriptBuilderFactory scriptBuilderFactory) throws IOException {
         assert !mavenProjects.isEmpty(): "No Maven projects provided.";
         this.allProjects = mavenProjects;
         this.rootProject = mavenProjects.iterator().next();
-        this.workingDir = workingDir.getCanonicalFile();
+        this.workingDir = workingDir;
         this.dsl = dsl;
         this.scriptBuilderFactory = scriptBuilderFactory;
     }
@@ -78,7 +79,7 @@ public class Maven2Gradle {
 
             BuildScriptBuilder buildSrcScriptBuilder = scriptBuilderFactory.script(dsl, "buildSrc/build");
             buildSrcScriptBuilder.conventionPluginSupport("Support convention plugins written in " + dsl.toString() + ". Convention plugins are build scripts in 'src/main' that automatically become available as plugins in the main build.");
-            buildSrcScriptBuilder.create().generate();
+            buildSrcScriptBuilder.create(workingDir).generate();
 
             BuildScriptBuilder conventionPluginBuilder = scriptBuilderFactory.script(dsl, "buildSrc/src/main/" + dsl.name().toLowerCase() + "/" + groupId + ".java-conventions");
 
@@ -102,7 +103,7 @@ public class Maven2Gradle {
             testNg(commonDeps, conventionPluginBuilder);
             configurePublishing(conventionPluginBuilder, packagesSources(rootProject), false, false);
 
-            conventionPluginBuilder.create().generate();
+            conventionPluginBuilder.create(workingDir).generate();
 
             for (MavenProject module : modules(allProjects, false)) {
                 String id = module.getArtifactId();
@@ -139,7 +140,7 @@ public class Maven2Gradle {
                     javaExtension.methodInvocation(null, "withJavadocJar");
                 }
 
-                moduleScriptBuilder.create().generate();
+                moduleScriptBuilder.create(workingDir).generate();
             }
         } else {
             BuildScriptBuilder scriptBuilder = scriptBuilderFactory.script(dsl, "build");
@@ -165,7 +166,7 @@ public class Maven2Gradle {
             declareDependencies(dependencies, scriptBuilder);
             testNg(dependencies, scriptBuilder);
 
-            scriptBuilder.create().generate();
+            scriptBuilder.create(workingDir).generate();
         }
     }
 
@@ -481,11 +482,11 @@ public class Maven2Gradle {
             String fqn = fqn(project, projects);
             File projectDirectory = projectDir(project);
             // don't add project if it's the rootproject
-            if (!workingDir.equals(projectDirectory)) {
+            if (!workingDir.getAsFile().equals(projectDirectory)) {
                 moduleNames.add(fqn);
 
                 // Calculate the path to the project, ignore this path if it's the default value
-                String relativePath = RelativePathUtil.relativePath(workingDir, projectDirectory);
+                String relativePath = RelativePathUtil.relativePath(workingDir.getAsFile(), projectDirectory);
                 if (!fqn.equals(":" + relativePath)) {
                     artifactIdToDir.put(fqn, relativePath);
                 }
@@ -500,7 +501,7 @@ public class Maven2Gradle {
             BuildScriptBuilder.Expression dirExpression = scriptBuilder.methodInvocationExpression("file", entry.getValue());
             scriptBuilder.propertyAssignment(null, "project(\"" + entry.getKey() + "\").projectDir", dirExpression);
         }
-        scriptBuilder.create().generate();
+        scriptBuilder.create(workingDir).generate();
     }
 
     private void createExternalDependency(org.apache.maven.model.Dependency mavenDependency, List<Dependency> result, String scope) {
